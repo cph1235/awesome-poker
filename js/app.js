@@ -38,18 +38,18 @@ class App extends Component {
   constructor() {
     super();
 
-    const seats = [];
+    const seats = {};
     for (let i = 0; i < 9; i++) {
-      seats.push({
+      seats[i] = {
         seatNumber: i,
         chip: 0,
         user: null,
-        action: false
-      });
+        action: null,
+        hand: []
+      };
     }
     this.state = {
-      board: [],
-      stage: STAGE.WAIT,
+      game: {},
       seats: seats,
       user: null
     }
@@ -76,38 +76,46 @@ class App extends Component {
     fetch("/login", {method: 'post', body: body})
     .then(res => res.json())
     .then(data => {
-      this.setState({
-        user: {userId: data.userId, username: data.username, chip: data.chip},
-        game: data.gameId
+      this.setState(prevState => {
+        return {
+          user: data.user,
+          game: data.game,
+          seats: Object.assign(prevState.seats, data.seats)
+        };
       });
 
-      // subscribe to the current game's chanel
-      this.channel = this.pusher.subscribe(data.gameId);
-      this.channel.bind('updateState', function(message) {
-        this.setState(message);
+      // subscribe to the current game's channel
+      this.channel = this.pusher.subscribe("channel" + data.game.gameId);
+      this.channel.bind('updateState', function(state) {
+        this.setState(prevState => {
+          return {
+            game: state.game,
+            seats: Object.assign(prevState.seats, state.seats)
+          };
+        });
       }, this);
     }).catch(error => {console.log(error)});
   }
 
   // user sit down on a seat 
-  sit(seat) {
-    const body = {
-      gameId: this.state.gameId,
-      seat: 0
-    };
-    fetch("/sit", {method: 'POST', body: body})
-    .then(res => res.json())
-    .then(data => {
-      this.channel = this.pusher.subscribe(data.gameId + data.seatId);
-      this.channel.bind('action', function(message) {
-        console.log(message);
-      }, this);
+  sit(seatNumber) {
+    const body = JSON.stringify({
+      userId: this.state.user.userId,
+      username: this.state.user.username,
+      chip: this.state.user.chip,
+      gameId: this.state.game.gameId,
+      seatNumber: seatNumber
     });
+    fetch("/sit", {method: 'POST', body: body});
   }
 
   // user makes a bet
-  bet(amount) {
-    fetch("/bet",{method: 'POST', body: {amount: ammount}})
+  bet(e) {
+    const body = JSON.stringify({
+      userId: this.state.user.userId,
+      amount: e.target.size
+    });
+    fetch("/bet",{method: 'POST', body: body})
     .then(res => res.json())
     .then(data => {
 
@@ -115,8 +123,8 @@ class App extends Component {
   }
 
   render() {
-    const seats = this.state.seats.map(seat => 
-      <Seat key={seat.seatNumber} seat={seat} sit={this.sit} />
+    const seats = Object.keys(this.state.seats).map(seatNumber => 
+      <Seat key={seatNumber} {...this.state.seats[seatNumber]} sit={this.sit} />
     );
     return (
       <div className="App">
@@ -125,11 +133,12 @@ class App extends Component {
         </div>
         {this.state.user ? 
         <div className="board">
-          <Game cards={this.state.board} />
+          <Game board={this.state.game.board} />
           {seats}
-          <button onClick={this.check}> CHECK </button>
-          <button onClick={this.call}> CALL </button>
-          <button onClick={this.bet}> BET </button>
+          <button size="-1" onClick={this.check}> CHECK </button>
+          <button size="0" onClick={this.check}> CHECK </button>
+          <button size="2" onClick={this.call}> CALL </button>
+          <button size="6" onClick={this.bet}> BET </button>
         </div>
         : <LoginDialog login={this.login} />}
       </div>
@@ -185,7 +194,7 @@ class LoginDialog extends Component {
 
 class Game extends Component {
   render() {
-    const cards = this.props.cards.map((card, index) =>
+    const cards = this.props.board.map((card, index) =>
       <li key={index}>{card.suit + " " + card.value} </li>
     );
     return (
@@ -211,11 +220,16 @@ class Seat extends Component {
   render() {
     return (
       <div className="seat">
-        <label>Seat {this.props.seat.seatNumber}</label>
-        {this.props.seat.user ? 
+        <label>Seat {this.props.seatNumber}</label>
+        {this.props.username ? 
         <div>
-          <span> {this.props.seat.user.username} </span>
-          <span> {this.props.seat.chip} </span>
+          <span> {"username: " + this.props.username} </span>
+          <span> {"chips: " + this.props.chip} </span>
+          <ul>
+            {this.props.hand.map((card, index) =>
+              <li key={index}>{card.suit + " " + card.value} </li>
+            )}
+          </ul>
         </div> :
         <button onClick={this.sit}>Sit Down</button>}
       </div>

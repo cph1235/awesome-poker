@@ -16,6 +16,7 @@ create table game (
 create table seat (
     seatId integer primary key autoincrement,
     userId integer not null,
+    username varchar(200) not null,
     gameId integer not null,
     seatNumber integer not null,
     chip integer not null default 0,

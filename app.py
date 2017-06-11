@@ -1,8 +1,10 @@
 from flask import Flask, render_template, request, g, jsonify
 from pusher import Pusher
+from enum import Enum
 import sqlite3
 import json
-from enum import Enum
+import time
+import random
 
 app = Flask(__name__)
 
@@ -58,6 +60,13 @@ def insert(table, fields=(), values=()):
     cur.close()
     return id
 
+def run(query, args=()):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(query, args)
+    conn.commit()
+    cur.close()
+
 @app.teardown_appcontext
 def close_connection(exception):
     db = getattr(g, '_database', None)
@@ -79,65 +88,153 @@ def login():
     user = query("SELECT * FROM user WHERE username = ?", [username], one=True)
     if not(user):
         userId = insert("user", ["username", "password", "chip"], [username, password, chip])
-    else:
-        userId = user["userId"]
+        user = query("SELECT * FROM user WHERE userId = ?", [userId], one=True)
     
     # get new game
     game = query("SELECT * FROM game", one=True)
     if not(game):
-        gameId = insert("game", ["gameName", "stage"], ["gameTest", STAGE.WAIT.value])
-    else:
-        gameId = game["gameId"]
+        gameId = insert("game", ["gameName", "board", "stage"], ["gameTest", "[]", STAGE.WAIT.name])
+        game = query("SELECT * FROM game WHERE gameId = ?", [gameId], one=True)
     
-    return jsonify({"userId": userId, "username": username, "chip": chip, "game": gameId})
+    # get all the current seats
+    seats = query("SELECT * FROM seat WHERE gameId = ?", [game["gameId"]])
+    state = {
+        "user": {
+            "userId": user["userId"],
+            "username": user["username"],
+            "chip": user["chip"]
+        },
+        "game": {
+            "gameId": game["gameId"],
+            "board": json.loads(game["board"]),
+            "pot": game["pot"]
+        },
+        "seats": {}
+    }
+    for seat in seats:
+        state["seats"][seat["seatNumber"]] = {
+            "seatId": seat["seatId"],
+            "seatNumber": seat["seatNumber"],
+            "username": seat["username"],
+            "chip": seat["chip"],
+            "hand": json.loads(seat["hand"]),
+            "status": seat["status"]
+        }
+    
+    return jsonify(state)
 
 # handle user siting down
 @app.route("/sit", methods=['POST'])
 def sit():
     req = request.get_json(force=True)
     userId = req["userId"]
+    username = req["username"]
     gameId = req["gameId"]
     chip = req["chip"]
     seatNumber = req["seatNumber"]
-    insert("seat", ["userId", "gameId", "chip", "seatNumber"], [userId, gameId, chip, seatNumber])
+    insert("seat", ["userId", "username", "gameId", "chip", "seatNumber", "hand"], [userId, username, gameId, chip, seatNumber, "[]"])
 
-    game = query("SELECT * FROM game WHERE gameId = ?", one=True)
-    if game['stage'] == "WAIT":
-        start_game(game["gameId"])
+    seatCount = query("SELECT COUNT(*) AS COUNT FROM seat WHERE gameId = ?", [gameId], one=True)
+    if seatCount["count"] > 1:
+        start_game(gameId)
+    
+    update_state(gameId)
+    return jsonify({"asdf": "asdf"})
 
-# handle 
+# handle betting
 @app.route("/bet", methods=['POST'])
 def bet():
-    amount = request.form['amount']
-    userId = request.form['userId']
-    pusher.trigger(game.gameId, 'action', {
-        'action': 'bet',
-        'user': userId,
-        'amount': amount
-    })
+    req = request.get_json(force=True)
+    userId = req["userId"]
+    seatId = req["seatId"]
+    bet = req["bet"]
+    run("UPDATE seat SET status = ? WHERE seatId = ?", [bet, seatId])
+    update_state(gameId)
+    # check if it's time to change stage
+    isChanged = check_status(gameId)
+    if isChanged:
+        time.sleep(2)
+        update_state(gameId)
+
+def check_status(gameId):
+    seats = query("SELECT * FROM seat WHERE game.gameId = ?", [gameId])
+
+    curentBet = None
+    playerLeft = 0
+    for seat in seats:
+        if seat["status"] is None:
+            return # haven't acted
+        elif seat["status"] < 0:
+            continue # folded
+        elif currentBet is None:
+            currentBet = seat["status"]
+            playerLeft += 1
+        elif currentBet != seat["status"]:
+            return # bet not equal yet
+        else:
+            playerLeft += 1
+
+    if playerLeft == 1:
+        end_game(gameId)
+    else:
+        progress(gameId)
+    return True
+
+def end_game(gameId):
+    # TODO: implement end game
+    return
+
+def progress(gameId):
+    # TODO: implement game progression
+    return
+
+def update_state(gameId):
+    game = query("SELECT * FROM game WHERE gameId = ?", [gameId], one=True)
+    seats = query("SELECT * FROM seat  WHERE gameId = ?", [gameId])
+    board = json.loads(game["board"])
+    # update board depending on stage of the game
+    if game["stage"] == STAGE.PREFLOP.name:
+        board = board
+    elif game["stage"] == STAGE.FLOP.name:
+        board = board[:3]
+    elif game["stage"] == STAGE.TURN.name:
+        board = board[:4]
+
+    state = {
+        "game": {
+            "gameId": game["gameId"],
+            "board": board,
+            "pot": game["pot"]
+        },
+        "seats": {}
+    }
+    for seat in seats:
+        state["seats"][seat["seatNumber"]] = {
+            "seatId": seat["seatId"],
+            "seatNumber": seat["seatNumber"],
+            "username": seat["username"],
+            "chip": seat["chip"],
+            "hand": json.loads(seat["hand"]),
+            "status": seat["status"]
+        }
+    
+    pusher.trigger("channel" + str(gameId), 'updateState', state)
 
 # create new game
-def _start_game(gameId):
-    game = query("SELECT * FROM game JOIN seat ON game.gameId = seat.gameId WHERE game.gameId = ?", [gameId])
+def start_game(gameId):
+    seats = query("SELECT * FROM seat WHERE gameId = ?", [gameId])
     deck = []
     for card in CARDS:
         for suit in SUITS:
-            deck.push({"card": card, "suit": suit})
+            deck.append({"value": card.name, "suit": suit.name})
+    random.shuffle(deck)
     
+    for seat in seats:
+        hand = json.dumps([deck.pop(), deck.pop()])
+        run("UPDATE seat SET hand = ? WHERE seatId = ?", [hand, seat["seatId"]])
 
-    
-    for seat in game:
-        if seat['button']:
-            button = seat['seatNumber']
-    
-    for seat in game:
-        cards = [deck.pop(), deck.pop()]
-        if seat['seat'] == button + 1 % 10:
-            _bet(seat, 1)
-        elif seat['seat'] == button + 2 % 10:
-            _bet(seat, 2)
-        pusher.trigger(game.gameId, 'hand', {'cards': cards})
-    board = deck[-5]
+    board = json.dumps(deck[-5:])
+    run("UPDATE game SET board = ?, stage = ? WHERE gameId = ?", [board, STAGE.PREFLOP.name, gameId])
 
 if __name__ == "__main__":
     app.run()

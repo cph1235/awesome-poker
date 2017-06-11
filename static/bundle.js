@@ -53,6 +53,8 @@
 
 	'use strict';
 
+	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
 	var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
 	var _react = __webpack_require__(2);
@@ -101,18 +103,18 @@
 
 	    var _this = _possibleConstructorReturn(this, (App.__proto__ || Object.getPrototypeOf(App)).call(this));
 
-	    var seats = [];
+	    var seats = {};
 	    for (var i = 0; i < 9; i++) {
-	      seats.push({
+	      seats[i] = {
 	        seatNumber: i,
 	        chip: 0,
 	        user: null,
-	        action: false
-	      });
+	        action: null,
+	        hand: []
+	      };
 	    }
 	    _this.state = {
-	      board: [],
-	      stage: STAGE.WAIT,
+	      game: {},
 	      seats: seats,
 	      user: null
 	      // This binding is necessary to make `this` work in the callback
@@ -146,15 +148,23 @@
 	      fetch("/login", { method: 'post', body: body }).then(function (res) {
 	        return res.json();
 	      }).then(function (data) {
-	        _this2.setState({
-	          user: { userId: data.userId, username: data.username, chip: data.chip },
-	          game: data.gameId
+	        _this2.setState(function (prevState) {
+	          return {
+	            user: data.user,
+	            game: data.game,
+	            seats: Object.assign(prevState.seats, data.seats)
+	          };
 	        });
 
-	        // subscribe to the current game's chanel
-	        _this2.channel = _this2.pusher.subscribe(data.gameId);
-	        _this2.channel.bind('updateState', function (message) {
-	          this.setState(message);
+	        // subscribe to the current game's channel
+	        _this2.channel = _this2.pusher.subscribe("channel" + data.game.gameId);
+	        _this2.channel.bind('updateState', function (state) {
+	          this.setState(function (prevState) {
+	            return {
+	              game: state.game,
+	              seats: Object.assign(prevState.seats, state.seats)
+	            };
+	          });
 	        }, _this2);
 	      }).catch(function (error) {
 	        console.log(error);
@@ -165,39 +175,37 @@
 
 	  }, {
 	    key: 'sit',
-	    value: function sit(seat) {
-	      var _this3 = this;
-
-	      var body = {
-	        gameId: this.state.gameId,
-	        seat: 0
-	      };
-	      fetch("/sit", { method: 'POST', body: body }).then(function (res) {
-	        return res.json();
-	      }).then(function (data) {
-	        _this3.channel = _this3.pusher.subscribe(data.gameId + data.seatId);
-	        _this3.channel.bind('action', function (message) {
-	          console.log(message);
-	        }, _this3);
+	    value: function sit(seatNumber) {
+	      var body = JSON.stringify({
+	        userId: this.state.user.userId,
+	        username: this.state.user.username,
+	        chip: this.state.user.chip,
+	        gameId: this.state.game.gameId,
+	        seatNumber: seatNumber
 	      });
+	      fetch("/sit", { method: 'POST', body: body });
 	    }
 
 	    // user makes a bet
 
 	  }, {
 	    key: 'bet',
-	    value: function bet(amount) {
-	      fetch("/bet", { method: 'POST', body: { amount: ammount } }).then(function (res) {
+	    value: function bet(e) {
+	      var body = JSON.stringify({
+	        userId: this.state.user.userId,
+	        amount: e.target.size
+	      });
+	      fetch("/bet", { method: 'POST', body: body }).then(function (res) {
 	        return res.json();
 	      }).then(function (data) {});
 	    }
 	  }, {
 	    key: 'render',
 	    value: function render() {
-	      var _this4 = this;
+	      var _this3 = this;
 
-	      var seats = this.state.seats.map(function (seat) {
-	        return _react2.default.createElement(Seat, { key: seat.seatNumber, seat: seat, sit: _this4.sit });
+	      var seats = Object.keys(this.state.seats).map(function (seatNumber) {
+	        return _react2.default.createElement(Seat, _extends({ key: seatNumber }, _this3.state.seats[seatNumber], { sit: _this3.sit }));
 	      });
 	      return _react2.default.createElement(
 	        'div',
@@ -214,21 +222,26 @@
 	        this.state.user ? _react2.default.createElement(
 	          'div',
 	          { className: 'board' },
-	          _react2.default.createElement(Game, { cards: this.state.board }),
+	          _react2.default.createElement(Game, { board: this.state.game.board }),
 	          seats,
 	          _react2.default.createElement(
 	            'button',
-	            { onClick: this.check },
+	            { size: '-1', onClick: this.check },
 	            ' CHECK '
 	          ),
 	          _react2.default.createElement(
 	            'button',
-	            { onClick: this.call },
+	            { size: '0', onClick: this.check },
+	            ' CHECK '
+	          ),
+	          _react2.default.createElement(
+	            'button',
+	            { size: '2', onClick: this.call },
 	            ' CALL '
 	          ),
 	          _react2.default.createElement(
 	            'button',
-	            { onClick: this.bet },
+	            { size: '6', onClick: this.bet },
 	            ' BET '
 	          )
 	        ) : _react2.default.createElement(LoginDialog, { login: this.login })
@@ -245,16 +258,16 @@
 	  function LoginDialog(props) {
 	    _classCallCheck(this, LoginDialog);
 
-	    var _this5 = _possibleConstructorReturn(this, (LoginDialog.__proto__ || Object.getPrototypeOf(LoginDialog)).call(this, props));
+	    var _this4 = _possibleConstructorReturn(this, (LoginDialog.__proto__ || Object.getPrototypeOf(LoginDialog)).call(this, props));
 
-	    _this5.state = {
+	    _this4.state = {
 	      username: "",
 	      password: "",
 	      chip: 200
 	    };
-	    _this5.submit = _this5.submit.bind(_this5);
-	    _this5.handleChange = _this5.handleChange.bind(_this5);
-	    return _this5;
+	    _this4.submit = _this4.submit.bind(_this4);
+	    _this4.handleChange = _this4.handleChange.bind(_this4);
+	    return _this4;
 	  }
 
 	  _createClass(LoginDialog, [{
@@ -322,7 +335,7 @@
 	  _createClass(Game, [{
 	    key: 'render',
 	    value: function render() {
-	      var cards = this.props.cards.map(function (card, index) {
+	      var cards = this.props.board.map(function (card, index) {
 	        return _react2.default.createElement(
 	          'li',
 	          { key: index },
@@ -352,10 +365,10 @@
 	  function Seat(props) {
 	    _classCallCheck(this, Seat);
 
-	    var _this7 = _possibleConstructorReturn(this, (Seat.__proto__ || Object.getPrototypeOf(Seat)).call(this, props));
+	    var _this6 = _possibleConstructorReturn(this, (Seat.__proto__ || Object.getPrototypeOf(Seat)).call(this, props));
 
-	    _this7.sit = _this7.sit.bind(_this7);
-	    return _this7;
+	    _this6.sit = _this6.sit.bind(_this6);
+	    return _this6;
 	  }
 
 	  _createClass(Seat, [{
@@ -373,24 +386,36 @@
 	          'label',
 	          null,
 	          'Seat ',
-	          this.props.seat.seatNumber
+	          this.props.seatNumber
 	        ),
-	        this.props.seat.user ? _react2.default.createElement(
+	        this.props.username ? _react2.default.createElement(
 	          'div',
 	          null,
 	          _react2.default.createElement(
 	            'span',
 	            null,
 	            ' ',
-	            this.props.seat.user.username,
+	            "username: " + this.props.username,
 	            ' '
 	          ),
 	          _react2.default.createElement(
 	            'span',
 	            null,
 	            ' ',
-	            this.props.seat.chip,
+	            "chips: " + this.props.chip,
 	            ' '
+	          ),
+	          _react2.default.createElement(
+	            'ul',
+	            null,
+	            this.props.hand.map(function (card, index) {
+	              return _react2.default.createElement(
+	                'li',
+	                { key: index },
+	                card.suit + " " + card.value,
+	                ' '
+	              );
+	            })
 	          )
 	        ) : _react2.default.createElement(
 	          'button',
