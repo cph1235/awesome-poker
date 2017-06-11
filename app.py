@@ -1,6 +1,7 @@
-from flask import Flask, render_template, request, g
+from flask import Flask, render_template, request, g, jsonify
 from pusher import Pusher
 import sqlite3
+import json
 from enum import Enum
 
 app = Flask(__name__)
@@ -18,7 +19,7 @@ pusher = Pusher(
 )
 
 SUITS = Enum("SUITS", "DIAMONDS SPADES CLUBS HEARTS")
-STAGE = Enum("STAGE", "PREFLOP FLOP TURN RIVER SHOWDOWN")
+STAGE = Enum("STAGE", "WAIT PREFLOP FLOP TURN RIVER SHOWDOWN")
 CARDS = Enum("CARDS", "A 2 3 4 5 6 7 8 9 10 J Q K")
 
 DATABASE = 'db/database.db'
@@ -37,14 +38,25 @@ def init_db():
             db.cursor().executescript(f.read())
         db.commit()
 
-def query_db(query, args=(), one=False):
+def query(query, args=(), one=False):
     cur = get_db().execute(query, args)
     rv = cur.fetchall()
     cur.close()
     return (rv[0] if rv else None) if one else rv
 
-def update_db(query, args=()):
-    cur = get_db().execute
+def insert(table, fields=(), values=()):
+    conn = get_db()
+    cur = conn.cursor()
+    query = 'INSERT INTO %s (%s) VALUES (%s)' % (
+        table,
+        ', '.join(fields),
+        ', '.join(['?'] * len(values))
+    )
+    cur.execute(query, values)
+    conn.commit()
+    id = cur.lastrowid
+    cur.close()
+    return id
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -58,36 +70,74 @@ def show_index():
     
 @app.route("/login", methods=['POST'])
 def login():
-    username = request.form['username']
-    password = request.form['password']
-    chip = request.form['chip']
+    req = request.get_json(force=True)
+    username = req['username']
+    password = req['password']
+    chip = req['chip']
 
-    if not query_db("SELECT * FROM user WHERE username = ?", [username], one=True):
-        update_db("INSERT INTO user (username, password, chip) VALUES (?, ?, ?)", [username, password, chip])
-    table = query_db("SELECT * FROM table WHERE player < 9 ")
-    if not table:
-        result = update_db("INSERT INTO table (tableName, status) VALUES (?, ?)", ('TABLE1', 'WAITING'))
-    return {username: username, chip: chip, table: table.tableId}
+    # get user
+    user = query("SELECT * FROM user WHERE username = ?", [username], one=True)
+    if not(user):
+        userId = insert("user", ["username", "password", "chip"], [username, password, chip])
+    else:
+        userId = user["userId"]
+    
+    # get new game
+    game = query("SELECT * FROM game", one=True)
+    if not(game):
+        gameId = insert("game", ["gameName", "stage"], ["gameTest", STAGE.WAIT.value])
+    else:
+        gameId = game["gameId"]
+    
+    return jsonify({"userId": userId, "username": username, "chip": chip, "game": gameId})
 
-@app.route("/join", methods=['POST'])
-def join():
-    tableId = request.form['tableId']
+# handle user siting down
+@app.route("/sit", methods=['POST'])
+def sit():
+    req = request.get_json(force=True)
+    userId = req["userId"]
+    gameId = req["gameId"]
+    chip = req["chip"]
+    seatNumber = req["seatNumber"]
+    insert("seat", ["userId", "gameId", "chip", "seatNumber"], [userId, gameId, chip, seatNumber])
+
+    game = query("SELECT * FROM game WHERE gameId = ?", one=True)
+    if game['stage'] == "WAIT":
+        start_game(game["gameId"])
+
+# handle 
+@app.route("/bet", methods=['POST'])
+def bet():
+    amount = request.form['amount']
     userId = request.form['userId']
-    chip = request.form['chip']
-    seat = request.form['seat']
+    pusher.trigger(game.gameId, 'action', {
+        'action': 'bet',
+        'user': userId,
+        'amount': amount
+    })
 
-    query_db("INSERT INTO player (userId, tableId, chip, seat) VALUES (?, ?, ?, ?)", ())
-
-    table = query_db("SELECT * FROM table WHERE tableId = ?")
-    if table['status'] == STAGE.WAIT:
-        start_game()
+# create new game
+def _start_game(gameId):
+    game = query("SELECT * FROM game JOIN seat ON game.gameId = seat.gameId WHERE game.gameId = ?", [gameId])
+    deck = []
+    for card in CARDS:
+        for suit in SUITS:
+            deck.push({"card": card, "suit": suit})
     
 
-@app.route("/game", methods=['POST'])
-def game():
-    players = request.form['players']
-    stage = request.form['stage']
-    pusher.trigger('poker-channel', 'start', {'message': 'hello :)'})
+    
+    for seat in game:
+        if seat['button']:
+            button = seat['seatNumber']
+    
+    for seat in game:
+        cards = [deck.pop(), deck.pop()]
+        if seat['seat'] == button + 1 % 10:
+            _bet(seat, 1)
+        elif seat['seat'] == button + 2 % 10:
+            _bet(seat, 2)
+        pusher.trigger(game.gameId, 'hand', {'cards': cards})
+    board = deck[-5]
 
 if __name__ == "__main__":
     app.run()
