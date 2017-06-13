@@ -2,29 +2,6 @@ import React, { Component } from 'react';
 import ReactDOM from 'react-dom';
 import Pusher from 'pusher-js';
 
-const SUITS = {
-  DIAMONDS: "DIAMONDS",
-  SPADES: "SPADES",
-  CLUBS: "CLUBS",
-  HEARTS: "HEARTS"
-}
-
-const CARDS = [
-  "A",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "10",
-  "J",
-  "Q",
-  "K"
-]
-
 const STAGE = {
   WAIT: "WAIT",
   PREFLOP: "PREFLOP",
@@ -37,25 +14,15 @@ const STAGE = {
 class App extends Component {
   constructor() {
     super();
-
-    const seats = {};
-    for (let i = 0; i < 9; i++) {
-      seats[i] = {
-        seatNumber: i,
-        chip: 0,
-        user: null,
-        action: null,
-        hand: []
-      };
-    }
     this.state = {
       game: {},
-      seats: seats,
+      seats: this.initializeSeats(),
       user: null
     }
     // This binding is necessary to make `this` work in the callback
-    this.sit = this.sit.bind(this);
     this.login = this.login.bind(this);
+    this.sit = this.sit.bind(this);
+    this.bet = this.bet.bind(this);
   }
 
   componentWillMount() {
@@ -76,25 +43,49 @@ class App extends Component {
     fetch("/login", {method: 'post', body: body})
     .then(res => res.json())
     .then(data => {
-      this.setState(prevState => {
-        return {
+      this.setState({
           user: data.user,
           game: data.game,
-          seats: Object.assign(prevState.seats, data.seats)
-        };
+          seats: this.handleSeatChange(data.seats, data.user)
       });
 
       // subscribe to the current game's channel
       this.channel = this.pusher.subscribe("channel" + data.game.gameId);
       this.channel.bind('updateState', function(state) {
-        this.setState(prevState => {
-          return {
-            game: state.game,
-            seats: Object.assign(prevState.seats, state.seats)
-          };
+        this.setState({
+          game: state.game,
+          seats: this.handleSeatChange(state.seats, data.user)
         });
       }, this);
     }).catch(error => {console.log(error)});
+  }
+
+  handleSeatChange(newSeats, user) {
+    const defaultSeats = this.initializeSeats();
+    const seats = Object.assign(defaultSeats, newSeats);
+    const currentSeatId = Object.keys(seats).find(seatId => seats[seatId].userId == user.userId);
+    if (currentSeatId) {
+      seats[currentSeatId].isCurrentUser = true;
+      Object.keys(seats).forEach(seatId => {
+        seats[seatId].isSeatAvailable = false;
+      });
+    }
+    return seats;
+  }
+
+  initializeSeats() {
+    const seats = {};
+    for (let i = 0; i < 9; i++) {
+      seats[i] = {
+        seatNumber: i,
+        chip: 0,
+        user: null,
+        action: null,
+        hand: [],
+        isSeatAvailable: true
+      };
+    }
+    return seats;
   }
 
   // user sit down on a seat 
@@ -110,21 +101,18 @@ class App extends Component {
   }
 
   // user makes a bet
-  bet(e) {
+  bet(seatId, betSize) {
     const body = JSON.stringify({
       userId: this.state.user.userId,
-      amount: e.target.size
+      seatId: seatId,
+      bet: betSize
     });
-    fetch("/bet",{method: 'POST', body: body})
-    .then(res => res.json())
-    .then(data => {
-
-    });
+    fetch("/bet", {method: 'POST', body: body}).catch(error => {console.log(error)});
   }
 
   render() {
     const seats = Object.keys(this.state.seats).map(seatNumber => 
-      <Seat key={seatNumber} {...this.state.seats[seatNumber]} sit={this.sit} />
+      <Seat key={seatNumber} {...this.state.seats[seatNumber]} sit={this.sit} bet={this.bet} />
     );
     return (
       <div className="App">
@@ -133,12 +121,8 @@ class App extends Component {
         </div>
         {this.state.user ? 
         <div className="board">
-          <Game board={this.state.game.board} />
+          <Game {...this.state.game} />
           {seats}
-          <button size="-1" onClick={this.check}> CHECK </button>
-          <button size="0" onClick={this.check}> CHECK </button>
-          <button size="2" onClick={this.call}> CALL </button>
-          <button size="6" onClick={this.bet}> BET </button>
         </div>
         : <LoginDialog login={this.login} />}
       </div>
@@ -195,13 +179,15 @@ class LoginDialog extends Component {
 class Game extends Component {
   render() {
     const cards = this.props.board.map((card, index) =>
-      <li key={index}>{card.suit + " " + card.value} </li>
+      <li key={index}>{card} </li>
     );
     return (
-      <ul>
-        <li>Board</li>
-        {cards}
-      </ul>
+      <div>
+        <h3> {"POT: " + this.props.pot}  </h3>
+        <ul>
+          {cards}
+        </ul>
+      </div>
     )
   }
 }
@@ -209,29 +195,70 @@ class Game extends Component {
 class Seat extends Component {
   constructor(props) {
     super(props);
-
+    this.state = {
+      betSize: 6
+    };
     this.sit = this.sit.bind(this);
+    this.fold = this.fold.bind(this);
+    this.check = this.check.bind(this);
+    this.call = this.call.bind(this);
+    this.bet = this.bet.bind(this);
+    this.changeBetSize = this.changeBetSize.bind(this);
   }
 
   sit() {
     this.props.sit(this.props.seatNumber);
   }
 
+  fold() {
+    this.props.bet(this.props.seatId, -1);
+  }
+
+  check() {
+    this.props.bet(this.props.seatId, 0);
+  }
+  
+  call() {
+    // TODO
+  }
+
+  bet() {
+    this.props.bet(this.props.seatId, this.state.betSize);
+  }
+
+  changeBetSize(e) {
+    this.setState({
+      betSize: e.target.value
+    });
+  }
+
   render() {
     return (
       <div className="seat">
         <label>Seat {this.props.seatNumber}</label>
-        {this.props.username ? 
+        {this.props.username &&
         <div>
           <span> {"username: " + this.props.username} </span>
           <span> {"chips: " + this.props.chip} </span>
+          <span> {"bet: " + this.props.status} </span>
+          {this.props.isCurrentUser && 
+          <span>
+            <button onClick={this.fold}> FOLD </button>
+            <button onClick={this.check}> CHECK </button>
+            <button onClick={this.call}> CALL </button>
+            <button onClick={this.bet}> BET </button>
+            <input type="text" value={this.state.betSize} onChange={this.changeBetSize} />
+          </span>
+          }
           <ul>
             {this.props.hand.map((card, index) =>
-              <li key={index}>{card.suit + " " + card.value} </li>
+              <li key={index}>{card} </li>
             )}
           </ul>
-        </div> :
-        <button onClick={this.sit}>Sit Down</button>}
+        </div> }
+        {this.props.isSeatAvailable &&
+          <button onClick={this.sit}>Sit Down</button>
+        }
       </div>
     )
   }

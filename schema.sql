@@ -21,5 +21,5 @@ create table seat (
     seatNumber integer not null,
     chip integer not null default 0,
     hand varchar(50),
-    status varchar(50)
+    status integer
 );

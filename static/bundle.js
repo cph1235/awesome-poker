@@ -77,15 +77,6 @@
 
 	function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
-	var SUITS = {
-	  DIAMONDS: "DIAMONDS",
-	  SPADES: "SPADES",
-	  CLUBS: "CLUBS",
-	  HEARTS: "HEARTS"
-	};
-
-	var CARDS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
-
 	var STAGE = {
 	  WAIT: "WAIT",
 	  PREFLOP: "PREFLOP",
@@ -103,23 +94,14 @@
 
 	    var _this = _possibleConstructorReturn(this, (App.__proto__ || Object.getPrototypeOf(App)).call(this));
 
-	    var seats = {};
-	    for (var i = 0; i < 9; i++) {
-	      seats[i] = {
-	        seatNumber: i,
-	        chip: 0,
-	        user: null,
-	        action: null,
-	        hand: []
-	      };
-	    }
 	    _this.state = {
 	      game: {},
-	      seats: seats,
+	      seats: _this.initializeSeats(),
 	      user: null
 	      // This binding is necessary to make `this` work in the callback
-	    };_this.sit = _this.sit.bind(_this);
-	    _this.login = _this.login.bind(_this);
+	    };_this.login = _this.login.bind(_this);
+	    _this.sit = _this.sit.bind(_this);
+	    _this.bet = _this.bet.bind(_this);
 	    return _this;
 	  }
 
@@ -148,27 +130,55 @@
 	      fetch("/login", { method: 'post', body: body }).then(function (res) {
 	        return res.json();
 	      }).then(function (data) {
-	        _this2.setState(function (prevState) {
-	          return {
-	            user: data.user,
-	            game: data.game,
-	            seats: Object.assign(prevState.seats, data.seats)
-	          };
+	        _this2.setState({
+	          user: data.user,
+	          game: data.game,
+	          seats: _this2.handleSeatChange(data.seats, data.user)
 	        });
 
 	        // subscribe to the current game's channel
 	        _this2.channel = _this2.pusher.subscribe("channel" + data.game.gameId);
 	        _this2.channel.bind('updateState', function (state) {
-	          this.setState(function (prevState) {
-	            return {
-	              game: state.game,
-	              seats: Object.assign(prevState.seats, state.seats)
-	            };
+	          this.setState({
+	            game: state.game,
+	            seats: this.handleSeatChange(state.seats, data.user)
 	          });
 	        }, _this2);
 	      }).catch(function (error) {
 	        console.log(error);
 	      });
+	    }
+	  }, {
+	    key: 'handleSeatChange',
+	    value: function handleSeatChange(newSeats, user) {
+	      var defaultSeats = this.initializeSeats();
+	      var seats = Object.assign(defaultSeats, newSeats);
+	      var currentSeatId = Object.keys(seats).find(function (seatId) {
+	        return seats[seatId].userId == user.userId;
+	      });
+	      if (currentSeatId) {
+	        seats[currentSeatId].isCurrentUser = true;
+	        Object.keys(seats).forEach(function (seatId) {
+	          seats[seatId].isSeatAvailable = false;
+	        });
+	      }
+	      return seats;
+	    }
+	  }, {
+	    key: 'initializeSeats',
+	    value: function initializeSeats() {
+	      var seats = {};
+	      for (var i = 0; i < 9; i++) {
+	        seats[i] = {
+	          seatNumber: i,
+	          chip: 0,
+	          user: null,
+	          action: null,
+	          hand: [],
+	          isSeatAvailable: true
+	        };
+	      }
+	      return seats;
 	    }
 
 	    // user sit down on a seat 
@@ -190,14 +200,15 @@
 
 	  }, {
 	    key: 'bet',
-	    value: function bet(e) {
+	    value: function bet(seatId, betSize) {
 	      var body = JSON.stringify({
 	        userId: this.state.user.userId,
-	        amount: e.target.size
+	        seatId: seatId,
+	        bet: betSize
 	      });
-	      fetch("/bet", { method: 'POST', body: body }).then(function (res) {
-	        return res.json();
-	      }).then(function (data) {});
+	      fetch("/bet", { method: 'POST', body: body }).catch(function (error) {
+	        console.log(error);
+	      });
 	    }
 	  }, {
 	    key: 'render',
@@ -205,7 +216,7 @@
 	      var _this3 = this;
 
 	      var seats = Object.keys(this.state.seats).map(function (seatNumber) {
-	        return _react2.default.createElement(Seat, _extends({ key: seatNumber }, _this3.state.seats[seatNumber], { sit: _this3.sit }));
+	        return _react2.default.createElement(Seat, _extends({ key: seatNumber }, _this3.state.seats[seatNumber], { sit: _this3.sit, bet: _this3.bet }));
 	      });
 	      return _react2.default.createElement(
 	        'div',
@@ -222,28 +233,8 @@
 	        this.state.user ? _react2.default.createElement(
 	          'div',
 	          { className: 'board' },
-	          _react2.default.createElement(Game, { board: this.state.game.board }),
-	          seats,
-	          _react2.default.createElement(
-	            'button',
-	            { size: '-1', onClick: this.check },
-	            ' CHECK '
-	          ),
-	          _react2.default.createElement(
-	            'button',
-	            { size: '0', onClick: this.check },
-	            ' CHECK '
-	          ),
-	          _react2.default.createElement(
-	            'button',
-	            { size: '2', onClick: this.call },
-	            ' CALL '
-	          ),
-	          _react2.default.createElement(
-	            'button',
-	            { size: '6', onClick: this.bet },
-	            ' BET '
-	          )
+	          _react2.default.createElement(Game, this.state.game),
+	          seats
 	        ) : _react2.default.createElement(LoginDialog, { login: this.login })
 	      );
 	    }
@@ -339,19 +330,25 @@
 	        return _react2.default.createElement(
 	          'li',
 	          { key: index },
-	          card.suit + " " + card.value,
+	          card,
 	          ' '
 	        );
 	      });
 	      return _react2.default.createElement(
-	        'ul',
+	        'div',
 	        null,
 	        _react2.default.createElement(
-	          'li',
+	          'h3',
 	          null,
-	          'Board'
+	          ' ',
+	          "POT: " + this.props.pot,
+	          '  '
 	        ),
-	        cards
+	        _react2.default.createElement(
+	          'ul',
+	          null,
+	          cards
+	        )
 	      );
 	    }
 	  }]);
@@ -367,7 +364,15 @@
 
 	    var _this6 = _possibleConstructorReturn(this, (Seat.__proto__ || Object.getPrototypeOf(Seat)).call(this, props));
 
+	    _this6.state = {
+	      betSize: 6
+	    };
 	    _this6.sit = _this6.sit.bind(_this6);
+	    _this6.fold = _this6.fold.bind(_this6);
+	    _this6.check = _this6.check.bind(_this6);
+	    _this6.call = _this6.call.bind(_this6);
+	    _this6.bet = _this6.bet.bind(_this6);
+	    _this6.changeBetSize = _this6.changeBetSize.bind(_this6);
 	    return _this6;
 	  }
 
@@ -375,6 +380,33 @@
 	    key: 'sit',
 	    value: function sit() {
 	      this.props.sit(this.props.seatNumber);
+	    }
+	  }, {
+	    key: 'fold',
+	    value: function fold() {
+	      this.props.bet(this.props.seatId, -1);
+	    }
+	  }, {
+	    key: 'check',
+	    value: function check() {
+	      this.props.bet(this.props.seatId, 0);
+	    }
+	  }, {
+	    key: 'call',
+	    value: function call() {
+	      // TODO
+	    }
+	  }, {
+	    key: 'bet',
+	    value: function bet() {
+	      this.props.bet(this.props.seatId, this.state.betSize);
+	    }
+	  }, {
+	    key: 'changeBetSize',
+	    value: function changeBetSize(e) {
+	      this.setState({
+	        betSize: e.target.value
+	      });
 	    }
 	  }, {
 	    key: 'render',
@@ -388,7 +420,7 @@
 	          'Seat ',
 	          this.props.seatNumber
 	        ),
-	        this.props.username ? _react2.default.createElement(
+	        this.props.username && _react2.default.createElement(
 	          'div',
 	          null,
 	          _react2.default.createElement(
@@ -406,18 +438,51 @@
 	            ' '
 	          ),
 	          _react2.default.createElement(
+	            'span',
+	            null,
+	            ' ',
+	            "bet: " + this.props.status,
+	            ' '
+	          ),
+	          this.props.isCurrentUser && _react2.default.createElement(
+	            'span',
+	            null,
+	            _react2.default.createElement(
+	              'button',
+	              { onClick: this.fold },
+	              ' FOLD '
+	            ),
+	            _react2.default.createElement(
+	              'button',
+	              { onClick: this.check },
+	              ' CHECK '
+	            ),
+	            _react2.default.createElement(
+	              'button',
+	              { onClick: this.call },
+	              ' CALL '
+	            ),
+	            _react2.default.createElement(
+	              'button',
+	              { onClick: this.bet },
+	              ' BET '
+	            ),
+	            _react2.default.createElement('input', { type: 'text', value: this.state.betSize, onChange: this.changeBetSize })
+	          ),
+	          _react2.default.createElement(
 	            'ul',
 	            null,
 	            this.props.hand.map(function (card, index) {
 	              return _react2.default.createElement(
 	                'li',
 	                { key: index },
-	                card.suit + " " + card.value,
+	                card,
 	                ' '
 	              );
 	            })
 	          )
-	        ) : _react2.default.createElement(
+	        ),
+	        this.props.isSeatAvailable && _react2.default.createElement(
 	          'button',
 	          { onClick: this.sit },
 	          'Sit Down'
