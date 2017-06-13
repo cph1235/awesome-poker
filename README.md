@@ -12,8 +12,7 @@ Prerequisites:
 
 Steps to setup:
 1. run pip install flask
-2. run pip install deuces
-3. run npm install -g webpack
-4. run npm install
-5. run npm build
-6. run npm start
+2. run npm install -g webpack
+3. run npm install
+4. run npm build
+5. run npm start
