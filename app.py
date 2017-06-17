@@ -1,17 +1,17 @@
-from flask import Flask, render_template, request, g, jsonify
-from pusher import Pusher
-from enum import Enum
+from flask import Flask, render_template, request, g, jsonify # tools in flask library
+from pusher import Pusher # push messages to the client side (Pusher library)
+from enum import Enum 
 import itertools
 import sqlite3
-import json
+import json # javascript object
 import time
 import random
 
-app = Flask(__name__)
+app = Flask(__name__) # creates a new variable called "app", and its a new flask object
 
 app_id='351222'
 key='b62d17064a726aa724fe'
-secret='0b162489a33e7e38137d'
+secret='0b162489a33e7e38137d' # sign up pusher, our account keys
 
 pusher = Pusher(
   app_id=app_id,
@@ -21,11 +21,12 @@ pusher = Pusher(
   ssl=True
 )
 
-STAGE = Enum("STAGE", "WAIT PREFLOP FLOP TURN RIVER SHOWDOWN")
+STAGE = Enum("STAGE", "WAIT PREFLOP FLOP TURN RIVER SHOWDOWN") # creates a variable with multiple types (google it)
 
-DATABASE = 'db/database.db'
+DATABASE = 'db/database.db' # location of the database
 
 def get_db():
+    """ grab connection to the database"""
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
@@ -33,17 +34,19 @@ def get_db():
     return db
 
 def init_db():
+    """ initialize the database"""
     with app.app_context():
-        db = get_db()
+        db = get_db() # gets the database connection
         with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+            db.cursor().executescript(f.read()) # execute sql code that is in schema.sql
+        db.commit() 
 
 def query(query, args=(), one=False):
+    """ retrieving info from database"""
     cur = get_db().execute(query, args)
-    rv = cur.fetchall()
+    result = cur.fetchall() # result is the answer to the query
     cur.close()
-    return (rv[0] if rv else None) if one else rv
+    return (result[0] if result else None) if one else result
 
 def insert(table, fields=(), values=()):
     conn = get_db()
@@ -66,7 +69,7 @@ def run(query, args=()):
     conn.commit()
     cur.close()
 
-@app.teardown_appcontext
+@app.teardown_appcontext # decorate this function
 def close_connection(exception):
     db = getattr(g, '_database', None)
     if db is not None:
@@ -74,19 +77,21 @@ def close_connection(exception):
 
 @app.route("/")
 def show_index():
-    return render_template('index.html')
+    return render_template('index.html') # return this html to the client, so client can display it
+
+
     
 @app.route("/login", methods=['POST'])
 def login():
     req = request.get_json(force=True)
     username = req['username']
     password = req['password']
-    chip = req['chip']
+    stackSize = req['stackSize']
 
     # get user
     user = query("SELECT * FROM user WHERE username = ?", [username], one=True)
     if not(user):
-        userId = insert("user", ["username", "password", "chip"], [username, password, chip])
+        userId = insert("user", ["username", "password", "stackSize"], [username, password, stackSize])
         user = query("SELECT * FROM user WHERE userId = ?", [userId], one=True)
     
     # get new game
@@ -101,7 +106,7 @@ def login():
         "user": {
             "userId": user["userId"],
             "username": user["username"],
-            "chip": user["chip"]
+            "stackSize": user["stackSize"]
         }
     }
     construct_state(state, game, seats)
@@ -110,13 +115,13 @@ def login():
 # handle user siting down
 @app.route("/sit", methods=['POST'])
 def sit():
-    req = request.get_json(force=True)
+    req = request.get_json(force=True) # this is flask API function, returns whatever the client sends
     userId = req["userId"]
     username = req["username"]
     gameId = req["gameId"]
-    chip = req["chip"]
+    stackSize = req["stackSize"]
     seatNumber = req["seatNumber"]
-    insert("seat", ["userId", "username", "gameId", "chip", "seatNumber", "hand"], [userId, username, gameId, chip, seatNumber, "[]"])
+    insert("seat", ["userId", "username", "gameId", "stackSize", "seatNumber", "hand"], [userId, username, gameId, stackSize, seatNumber, "[]"])
 
     seatCount = query("SELECT COUNT(*) AS COUNT FROM seat WHERE gameId = ?", [gameId], one=True)
     if seatCount["count"] > 1:
@@ -128,35 +133,35 @@ def sit():
 # handle betting
 @app.route("/bet", methods=['POST'])
 def bet():
-    req = request.get_json(force=True)
+    req = request.get_json(force=True) # json format = strings
     userId = req["userId"]
     seatId = req["seatId"]
-    bet = int(req["bet"])
+    betSize = int(req["betSize"])
     seat = query("SELECT * FROM seat WHERE seatId = ?", [seatId], one=True)
-    chip = seat["chip"]
-    if bet > 0:
-        chip -= bet
-        if seat["status"] is not None:
-            chip += seat["status"]
-    run("UPDATE seat SET status = ?, chip = ? WHERE seatId = ?", [bet, chip, seatId])
+    stackSize = seat["stackSize"]
+    if betSize > 0:
+        stackSize -= betSize
+        if seat["betSize"] is not None: # None is a python keyword
+            stackSize += seat["betSize"]
+    run("UPDATE seat SET betSize = ?, stackSize = ? WHERE seatId = ?", [betSize, stackSize, seatId]) # update the seat's betsize and stacksize
     push_state(seat["gameId"])
     # check if it's time to change stage
-    check_status(seat["gameId"])
+    check_betSize(seat["gameId"])
     return jsonify({"success": "true"})
 
-def check_status(gameId):
+def check_betSize(gameId):
     seats = query("SELECT * FROM seat WHERE gameId = ?", [gameId])
 
     currentBet, playerLeft = None, 0
     for seat in seats:
-        if seat["status"] is None:
+        if seat["betSize"] is None:
             return # haven't acted
-        elif seat["status"] < 0:
+        elif seat["betSize"] < 0:
             continue # folded
         elif currentBet is None:
-            currentBet = seat["status"]
+            currentBet = seat["betSize"]
             playerLeft += 1
-        elif currentBet != seat["status"]:
+        elif currentBet != seat["betSize"]:
             return # bet not equal yet
         else:
             playerLeft += 1
@@ -177,8 +182,8 @@ def end_game(gameId):
             bestSeats.append(seat)
 
     for seat in bestSeats:
-        chip = seat["chip"] + (game["pot"] // len(bestSeats))
-        run("UPDATE seat SET chip = ? WHERE seatId = ?", [chip, seat["seatId"]])
+        stackSize = seat["stackSize"] + (game["pot"] // len(bestSeats))
+        run("UPDATE seat SET stackSize = ? WHERE seatId = ?", [stackSize, seat["seatId"]])
 
     run("UPDATE game SET board = ?, pot = ?, stage = ? WHERE gameId = ?", ["[]", 0, STAGE.WAIT.name, gameId])
     time.sleep(1)
@@ -195,10 +200,10 @@ def hand_rank(hand):
     straight = len(ranks) == 5 and max(ranks) - min(ranks) == 4
     flush = len(set([s for r,s in hand])) == 1
     return max(rankings[counts], 4 * straight + 5 * flush), ranks
-
+    
 def groups(items):
-    groups = sorted([(items.count(x), x) for x in set(items)], reverse=True)
-    return zip(*groups)
+    groups = sorted([(items.count(x), x) for x in set(items)], reverse=True) # [(3, 14), (2, 13)]
+    return zip(*groups) # => [(3, 2), (14, 13)]
 
 def progress(gameId):
     game = query("SELECT * FROM game WHERE gameId = ?", [gameId], one=True)
@@ -216,9 +221,9 @@ def progress(gameId):
         newStage = STAGE.SHOWDOWN.name
 
     for seat in seats:
-        if seat["status"] > 0:
-            pot += seat["status"]
-        run("UPDATE seat SET status = ? WHERE seatId = ?", [None, seat["seatId"]])
+        if seat["betSize"] > 0:
+            pot += seat["betSize"]
+        run("UPDATE seat SET betSize = ? WHERE seatId = ?", [None, seat["seatId"]])
 
     run("UPDATE game SET stage = ?, pot = ? WHERE gameId = ?", [newStage, pot, gameId])
     time.sleep(1)
@@ -255,9 +260,9 @@ def construct_state(state, game, seats):
             "seatNumber": seat["seatNumber"],
             "username": seat["username"],
             "userId": seat["userId"],
-            "chip": seat["chip"],
+            "stackSize": seat["stackSize"],
             "hand": json.loads(seat["hand"]),
-            "status": seat["status"]
+            "betSize": seat["betSize"]
         }
 
 # create new game

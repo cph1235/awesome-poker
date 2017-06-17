@@ -118,13 +118,13 @@
 
 	  }, {
 	    key: 'login',
-	    value: function login(username, password, chip) {
+	    value: function login(username, password, stackSize) {
 	      var _this2 = this;
 
 	      var body = JSON.stringify({
 	        username: username,
 	        password: password,
-	        chip: chip
+	        stackSize: stackSize
 	      });
 
 	      fetch("/login", { method: 'post', body: body }).then(function (res) {
@@ -171,7 +171,7 @@
 	      for (var i = 0; i < 9; i++) {
 	        seats[i] = {
 	          seatNumber: i,
-	          chip: 0,
+	          stackSize: 0,
 	          user: null,
 	          action: null,
 	          hand: [],
@@ -189,7 +189,7 @@
 	      var body = JSON.stringify({
 	        userId: this.state.user.userId,
 	        username: this.state.user.username,
-	        chip: this.state.user.chip,
+	        stackSize: this.state.user.stackSize,
 	        gameId: this.state.game.gameId,
 	        seatNumber: seatNumber
 	      });
@@ -204,7 +204,7 @@
 	      var body = JSON.stringify({
 	        userId: this.state.user.userId,
 	        seatId: seatId,
-	        bet: betSize
+	        betSize: betSize
 	      });
 	      fetch("/bet", { method: 'POST', body: body }).catch(function (error) {
 	        console.log(error);
@@ -254,7 +254,7 @@
 	    _this4.state = {
 	      username: "",
 	      password: "",
-	      chip: 200
+	      stackSize: 200
 	    };
 	    _this4.submit = _this4.submit.bind(_this4);
 	    _this4.handleChange = _this4.handleChange.bind(_this4);
@@ -269,11 +269,11 @@
 	        alert("Username and password can't be empty");
 	        return;
 	      }
-	      if (!Number.isInteger(this.state.chip)) {
-	        alert("chips must be numeric");
+	      if (!Number.isInteger(this.state.stackSize)) {
+	        alert("stackSizes must be numeric");
 	        return;
 	      }
-	      this.props.login(this.state.username, this.state.password, this.state.chip);
+	      this.props.login(this.state.username, this.state.password, this.state.stackSize);
 	    }
 	  }, {
 	    key: 'handleChange',
@@ -303,9 +303,9 @@
 	        _react2.default.createElement(
 	          'label',
 	          null,
-	          'chips: '
+	          'stackSizes: '
 	        ),
-	        _react2.default.createElement('input', { type: 'text', name: 'chip', value: this.state.chip, onChange: this.handleChange }),
+	        _react2.default.createElement('input', { type: 'text', name: 'stackSize', value: this.state.stackSize, onChange: this.handleChange }),
 	        _react2.default.createElement('input', { type: 'submit', value: 'Submit' })
 	      );
 	    }
@@ -434,14 +434,14 @@
 	            'span',
 	            null,
 	            ' ',
-	            "chips: " + this.props.chip,
+	            "stackSizes: " + this.props.stackSize,
 	            ' '
 	          ),
 	          _react2.default.createElement(
 	            'span',
 	            null,
 	            ' ',
-	            "bet: " + this.props.status,
+	            "bet: " + this.props.betSize,
 	            ' '
 	          ),
 	          this.props.isCurrentUser && _react2.default.createElement(
@@ -455,7 +455,7 @@
 	            _react2.default.createElement(
 	              'button',
 	              { onClick: this.check },
-	              ' CHECK '
+	              ' CHECK'
 	            ),
 	            _react2.default.createElement(
 	              'button',

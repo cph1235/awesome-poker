@@ -33,11 +33,11 @@ class App extends Component {
   }
 
   // user login
-  login(username, password, chip) {
+  login(username, password, stackSize) {
     const body = JSON.stringify({
       username: username,
       password: password,
-      chip: chip
+      stackSize: stackSize
     });
     
     fetch("/login", {method: 'post', body: body})
@@ -78,7 +78,7 @@ class App extends Component {
     for (let i = 0; i < 9; i++) {
       seats[i] = {
         seatNumber: i,
-        chip: 0,
+        stackSize: 0,
         user: null,
         action: null,
         hand: [],
@@ -93,7 +93,7 @@ class App extends Component {
     const body = JSON.stringify({
       userId: this.state.user.userId,
       username: this.state.user.username,
-      chip: this.state.user.chip,
+      stackSize: this.state.user.stackSize,
       gameId: this.state.game.gameId,
       seatNumber: seatNumber
     });
@@ -105,7 +105,7 @@ class App extends Component {
     const body = JSON.stringify({
       userId: this.state.user.userId,
       seatId: seatId,
-      bet: betSize
+      betSize: betSize
     });
     fetch("/bet", {method: 'POST', body: body}).catch(error => {console.log(error)});
   }
@@ -136,7 +136,7 @@ class LoginDialog extends Component {
     this.state = {
       username: "",
       password: "",
-      chip: 200
+      stackSize: 200
     }
     this.submit = this.submit.bind(this);
     this.handleChange = this.handleChange.bind(this);
@@ -148,11 +148,11 @@ class LoginDialog extends Component {
       alert("Username and password can't be empty");
       return;
     }
-    if (!Number.isInteger(this.state.chip)) {
-      alert("chips must be numeric");
+    if (!Number.isInteger(this.state.stackSize)) {
+      alert("stackSizes must be numeric");
       return;
     }
-    this.props.login(this.state.username, this.state.password, this.state.chip);
+    this.props.login(this.state.username, this.state.password, this.state.stackSize);
   }
 
   handleChange(e) {
@@ -168,8 +168,8 @@ class LoginDialog extends Component {
         <input type="text" name="username" value={this.state.username} onChange={this.handleChange} />
         <label>password: </label>
         <input type="text" name="password" value={this.state.password} onChange={this.handleChange} />
-        <label>chips: </label>
-        <input type="text" name="chip" value={this.state.chip} onChange={this.handleChange}/>
+        <label>stackSizes: </label>
+        <input type="text" name="stackSize" value={this.state.stackSize} onChange={this.handleChange}/>
         <input type="submit" value="Submit" />
       </form>
     );
@@ -239,12 +239,12 @@ class Seat extends Component {
         {this.props.username &&
         <div>
           <span> {"username: " + this.props.username} </span>
-          <span> {"chips: " + this.props.chip} </span>
-          <span> {"bet: " + this.props.status} </span>
+          <span> {"stackSizes: " + this.props.stackSize} </span>
+          <span> {"bet: " + this.props.betSize} </span>
           {this.props.isCurrentUser && 
           <span>
             <button onClick={this.fold}> FOLD </button>
-            <button onClick={this.check}> CHECK </button>
+            <button onClick={this.check}> CHECK</button>
             <button onClick={this.call}> CALL </button>
             <button onClick={this.bet}> BET </button>
             <input type="text" value={this.state.betSize} onChange={this.changeBetSize} />
