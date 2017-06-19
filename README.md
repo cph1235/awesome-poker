@@ -17,3 +17,5 @@ Steps to setup:
 4. run npm install
 5. run npm build
 6. run npm start
+
+(Note: for mac use pip3 instead of pip, and use python3 app.py instead of npm start)
