@@ -11,6 +11,9 @@ Prerequisites:
 2. pip
 
 Steps to setup:
+
+git clone "repo"
+
 1. run pip install pusher
 2. run pip install flask
 3. run npm install -g webpack
@@ -19,3 +22,5 @@ Steps to setup:
 6. run npm start
 
 (Note: for mac use pip3 instead of pip, and use python3 app.py instead of npm start)
+
+run webpack --watch
