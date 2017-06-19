@@ -172,13 +172,16 @@ def end_game(gameId):
     game = query("SELECT * FROM game WHERE gameId = ?", [gameId], one=True)
     seats = query("SELECT * FROM seat WHERE gameId = ?", [gameId])
     board = json.loads(game["board"])
-    currentHandValue, bestSeats = None, []
+    bestValue = None  # current highest valued hand
+    bestSeats = []
     for seat in seats:
         hand = json.loads(seat["hand"])
-        handValue = max(itertools.combinations(board + hand, 5), key=hand_rank)
-        if len(bestSeats) == 0 or handValue > currentHandValue:
-            currentHandValue, bestSeats = handValue, [seat]
-        elif handValue == currentHandValue:
+        bestCombo = max(itertools.combinations(board + hand, 5), key=hand_rank)
+        handValue = hand_rank(bestCombo)
+        if len(bestSeats) == 0 or handValue > bestValue:
+            bestValue = handValue
+            bestSeats = [seat]  # create a new array (bestSeats) with a single element "seat"
+        elif handValue == bestValue:
             bestSeats.append(seat)
 
     for seat in bestSeats:
