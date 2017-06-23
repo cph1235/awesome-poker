@@ -9,8 +9,9 @@ create table game (
     gameId integer primary key autoincrement,
     gameName varchar(50) not null,
     board varchar(200),
-    pot integer not null default 0,
     stage varchar(50) not null
+    buttonSeatId integer
+
 );
 
 create table seat (
@@ -21,6 +22,22 @@ create table seat (
     seatNumber integer not null,
     stackSize integer not null default 0,
     hand varchar(50),
-    action varchar(10),
-    betSize integer
+    action varchar(10), /*call, bet, fold, all in */
+    betSize integer not null default 0,
+    actSequence integer 
+
+    
 );
+
+create table pot(
+    potId intger primary key autoincrement,
+    seatIds varchar(200) not null, 
+    gameid integer not null,
+    currentBetSize integer not null default 0,
+    potSize integer not null default 0,
+    rank integer not null default 0,
+
+    
+    
+
+)
