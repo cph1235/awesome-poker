@@ -1,29 +1,30 @@
-from flask import Flask, render_template, request, g, jsonify # tools in flask library
-from pusher import Pusher # push messages to the client side (Pusher library)
+from flask import Flask, render_template, request, g, jsonify  # tools in flask library
+from pusher import Pusher  # push messages to the client side (Pusher library)
 from enum import Enum 
 import itertools
 import sqlite3
-import json # javascript object
+import json  # javascript object
 import time
 import random
 
-app = Flask(__name__) # creates a new variable called "app", and its a new flask object
+app = Flask(__name__)  # creates a new variable called "app", and its a new flask object
 
-app_id='351222'
-key='b62d17064a726aa724fe'
-secret='0b162489a33e7e38137d' # sign up pusher, our account keys
+app_id = '351222'
+key = 'b62d17064a726aa724fe'
+secret = '0b162489a33e7e38137d'  # sign up pusher, our account keys
 
 pusher = Pusher(
   app_id=app_id,
   key=key,
   secret=secret,
-  cluster = "us2",
+  cluster="us2",
   ssl=True
 )
 
-STAGE = Enum("STAGE", "WAIT PREFLOP FLOP TURN RIVER SHOWDOWN") # creates a variable with multiple types (google it)
+STAGE = Enum("STAGE", "WAIT PREFLOP FLOP TURN RIVER SHOWDOWN")  # creates a variable with multiple types (google it)
 
-DATABASE = 'db/database.db' # location of the database
+DATABASE = 'db/database.db'  # location of the database
+
 
 def get_db():
     """ grab connection to the database"""
@@ -33,20 +34,23 @@ def get_db():
         db.row_factory = sqlite3.Row
     return db
 
+
 def init_db():
     """ initialize the database"""
     with app.app_context():
-        db = get_db() # gets the database connection
+        db = get_db()  # gets the database connection
         with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read()) # execute sql code that is in schema.sql
-        db.commit() 
+            db.cursor().executescript(f.read())  # execute sql code that is in schema.sql
+        db.commit()
+
 
 def query(query, args=(), one=False):
     """ retrieving info from database"""
     cur = get_db().execute(query, args)
-    result = cur.fetchall() # result is the answer to the query
+    result = cur.fetchall()  # result is the answer to the query
     cur.close()
     return (result[0] if result else None) if one else result
+
 
 def insert(table, fields=(), values=()):
     conn = get_db()
@@ -62,6 +66,7 @@ def insert(table, fields=(), values=()):
     cur.close()
     return id
 
+
 def run(query, args=()):
     conn = get_db()
     cur = conn.cursor()
@@ -69,18 +74,19 @@ def run(query, args=()):
     conn.commit()
     cur.close()
 
-@app.teardown_appcontext # decorate this function
+
+@app.teardown_appcontext  # decorate this function
 def close_connection(exception):
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
 
+
 @app.route("/")
 def show_index():
-    return render_template('index.html') # return this html to the client, so client can display it
+    return render_template('index.html')  # return this html to the client, so client can display it
 
 
-    
 @app.route("/login", methods=['POST'])
 def login():
     req = request.get_json(force=True)
@@ -112,10 +118,11 @@ def login():
     construct_state(state, game, seats)
     return jsonify(state)
 
+
 # handle user siting down
 @app.route("/sit", methods=['POST'])
 def sit():
-    req = request.get_json(force=True) # this is flask API function, returns whatever the client sends
+    req = request.get_json(force=True)  # this is flask API function, returns whatever the client sends
     userId = req["userId"]
     username = req["username"]
     gameId = req["gameId"]
@@ -130,10 +137,11 @@ def sit():
     push_state(gameId)
     return jsonify({"success": "true"})
 
+
 # handle betting
 @app.route("/bet", methods=['POST'])
 def bet():
-    req = request.get_json(force=True) # json format = strings
+    req = request.get_json(force=True)  # json format = strings
     userId = req["userId"]
     seatId = req["seatId"]
     betSize = int(req["betSize"])
@@ -148,6 +156,7 @@ def bet():
     # check if it's time to change stage
     check_betSize(seat["gameId"])
     return jsonify({"success": "true"})
+
 
 def check_betSize(gameId):
     seats = query("SELECT * FROM seat WHERE gameId = ?", [gameId])
@@ -168,7 +177,10 @@ def check_betSize(gameId):
 
     progress(gameId)
 
+
+# decides who win and assign the pot(s)
 def end_game(gameId):
+
     game = query("SELECT * FROM game WHERE gameId = ?", [gameId], one=True)
     seats = query("SELECT * FROM seat WHERE gameId = ?", [gameId])
     board = json.loads(game["board"])
@@ -195,6 +207,7 @@ def end_game(gameId):
     start_game(gameId)
     push_state(gameId)
 
+
 def hand_rank(hand):
     rankings = {(4, 1): 7, (3, 2): 6, (3, 1, 1): 3, (2, 2, 1): 2, (2, 1, 1, 1): 1, (1, 1, 1, 1, 1): 0}
     counts, ranks = groups(['--23456789TJQKA'.index(r) for r,s in hand])
@@ -203,10 +216,12 @@ def hand_rank(hand):
     straight = len(ranks) == 5 and max(ranks) - min(ranks) == 4
     flush = len(set([s for r,s in hand])) == 1
     return max(rankings[counts], 4 * straight + 5 * flush), ranks
-    
+
+
 def groups(items):
     groups = sorted([(items.count(x), x) for x in set(items)], reverse=True) # [(3, 14), (2, 13)]
     return zip(*groups) # => [(3, 2), (14, 13)]
+
 
 def progress(gameId):
     game = query("SELECT * FROM game WHERE gameId = ?", [gameId], one=True)
@@ -234,12 +249,14 @@ def progress(gameId):
     if newStage == STAGE.SHOWDOWN.name:
         end_game(gameId)
 
+
 def push_state(gameId):
     game = query("SELECT * FROM game WHERE gameId = ?", [gameId], one=True)
     seats = query("SELECT * FROM seat  WHERE gameId = ?", [gameId])
     state = {}
     construct_state(state, game, seats)
     pusher.trigger("channel" + str(gameId), 'updateState', state)
+
 
 def construct_state(state, game, seats):
     board = json.loads(game["board"])
@@ -267,6 +284,7 @@ def construct_state(state, game, seats):
             "hand": json.loads(seat["hand"]),
             "betSize": seat["betSize"]
         }
+
 
 # create new game
 def start_game(gameId):

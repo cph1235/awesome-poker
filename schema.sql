@@ -30,7 +30,7 @@ create table seat (
 );
 
 create table pot(
-    potId intger primary key autoincrement,
+    potId integer primary key autoincrement,
     seatIds varchar(200) not null, 
     gameid integer not null,
     currentBetSize integer not null default 0,
