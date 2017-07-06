@@ -11,7 +11,6 @@ create table game (
     board varchar(200),
     stage varchar(50) not null
     buttonSeatId integer
-
 );
 
 create table seat (
@@ -22,11 +21,8 @@ create table seat (
     seatNumber integer not null,
     stackSize integer not null default 0,
     hand varchar(50),
-    action varchar(10), /*call, bet, fold, all in */
-    betSize integer not null default 0,
-    actSequence integer 
-
-    
+    action varchar(20), /* acting, waiting, fold, all in */
+    betSize integer not null default 0
 );
 
 create table pot(
@@ -36,8 +32,4 @@ create table pot(
     currentBetSize integer not null default 0,
     potSize integer not null default 0,
     rank integer not null default 0,
-
-    
-    
-
 )

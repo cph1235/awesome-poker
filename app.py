@@ -144,14 +144,21 @@ def bet():
     req = request.get_json(force=True)  # json format = strings
     userId = req["userId"]
     seatId = req["seatId"]
+  
+
     betSize = int(req["betSize"])
-    seat = query("SELECT * FROM seat WHERE seatId = ?", [seatId], one=True)
+    seat = query("SELECT * FROM seat WHERE seatId = ?", [seatId], one=True) #  current action on this seat 
     stackSize = seat["stackSize"]
     if betSize > 0:
         stackSize -= betSize
         if seat["betSize"] is not None: # None is a python keyword
             stackSize += seat["betSize"]
-    run("UPDATE seat SET betSize = ?, stackSize = ? WHERE seatId = ?", [betSize, stackSize, seatId]) # update the seat's betsize and stacksize
+    run("UPDATE seat SET betSize = ?, stackSize = ?, action = ? WHERE seatId = ?", [betSize, stackSize, "acted", seatId]) # update the seat's bet size and stack size
+
+    gameId = seat["gameId"]
+    buttonSeatId = query("SELECT * FROM game WHERE gameId = ?", [gameId], one=True)
+    SortSeatSequence (seats, )
+
     push_state(seat["gameId"])
     # check if it's time to change stage
     check_betSize(seat["gameId"])
@@ -286,18 +293,40 @@ def construct_state(state, game, seats):
         }
 
 
+def SortSeatSequence(seats, buttonSeatNumber)  # return an array of seats in a sorted order starting from the small blind seat's number
+
+    seats.sort(key=lambda x: x.seatNumber)  # sort the seats in ascending order (same as act sequence)
+    buttonSeatIndex = next(i for i, element in enumerate(seats) if element.seatNumber == buttonSeatNumber)  # find the seat index that has the button
+    return seats[buttonSeatIndex + 1:] + seats[:buttonSeatIndex + 1]
+
+
+
 # create new game
 def start_game(gameId):
     seats = query("SELECT * FROM seat WHERE gameId = ?", [gameId])
     deck = [r+s for r in '23456789TJKA' for s in 'shdc']
     random.shuffle(deck)
-    
-    for seat in seats:
+
+    buttonSeatNumber = random.choice(seats).seatNumber  # assign the button randomly
+    sortedSeats = SortSeatSequence(seats,buttonSeatNumber)  # sortedSeats = the seats in act sequence
+
+    for index, seat in enumerate(sortedSeats):
         hand = json.dumps([deck.pop(), deck.pop()])
-        run("UPDATE seat SET hand = ? WHERE seatId = ?", [hand, seat["seatId"]])
+        
+        action = "waiting"  # default action
+        betSize = 0  # default bet size 
+        if index == 0:
+            betSize = 1  # small blind bet size 
+        elif index == 1:
+           betSize == 2  # big blind bet size
+        elif index == 2:
+            action = "acting"
+              
+
+        run("UPDATE seat SET hand = ?, betSize = ?, action = ? WHERE seatId = ?",  [hand, betSize, action, seat.seatId])
 
     board = json.dumps(deck[:5])
-    run("UPDATE game SET board = ?, stage = ? WHERE gameId = ?", [board, STAGE.PREFLOP.name, gameId])
+    run("UPDATE game SET board = ?, buttonSeatId = ?，stage = ? WHERE gameId = ?", [board, buttonSeatNumber，STAGE.PREFLOP.name, gameId])
 
 if __name__ == "__main__":
     app.run()
